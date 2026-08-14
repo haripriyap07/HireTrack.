@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - HireTrack</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+<div id="navbarMount"></div>
+
+<section class="page-section">
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <p class="eyebrow">Account</p>
+                <h1>My Profile</h1>
+                <p class="subtitle">Manage your personal and professional information.</p>
+            </div>
+        </div>
+
+        <div id="profileError" class="error-message"></div>
+        <div id="profileSuccess" class="success-message"></div>
+
+        <div class="panel">
+            <div class="panel-body">
+                <form id="profileForm" class="form">
+                    <div class="profile-grid">
+                        <div class="profile-card">
+                            <div class="avatar-circle large" id="profileAvatarLetter">U</div>
+                            <h3 id="profileNamePreview">User</h3>
+                            <p id="profileRole">Role</p>
+                            <small id="memberSince"></small>
+                        </div>
+
+                        <div class="profile-details">
+                            <div class="form-group">
+                                <label for="profileNameInput">Name</label>
+                                <input id="profileNameInput" type="text" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Email</label>
+                                <input id="profileEmailInput" type="email" readonly>
+                                <small>Email is tied to your login account.</small>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="companyInput">Company</label>
+                                <input id="companyInput" type="text" placeholder="Company / organization">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="phoneInput">Phone</label>
+                                <input id="phoneInput" type="tel" placeholder="Phone number">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="bioInput">About / Bio</label>
+                                <textarea id="bioInput" rows="4" maxlength="1000" placeholder="Tell us a little about yourself..."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="passwordInput">New Password</label>
+                                <input id="passwordInput" type="password" minlength="8" placeholder="Leave blank to keep current password">
+                            </div>
+
+                            <div class="form-actions">
+                                <button id="saveProfileButton" type="submit" class="btn btn-primary">Save Changes</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script src="/js/main.js"></script>
+<script>
+if (!requireAuth()) throw new Error('auth');
+initNavbar('profile');
+
+const form = document.getElementById('profileForm');
+const errorBox = document.getElementById('profileError');
+const successBox = document.getElementById('profileSuccess');
+const saveButton = document.getElementById('saveProfileButton');
+let profile = null;
+
+function renderProfile(user) {
+    profile = user;
+    document.getElementById('profileNamePreview').textContent = user.name || 'User';
+    document.getElementById('profileRole').textContent = formatStatus(user.role || 'CANDIDATE');
+    document.getElementById('memberSince').textContent = user.memberSince ? `Member since ${formatDate(user.memberSince)}` : '';
+    document.getElementById('profileNameInput').value = user.name || '';
+    document.getElementById('profileEmailInput').value = user.email || '';
+    document.getElementById('companyInput').value = user.company || '';
+    document.getElementById('phoneInput').value = user.phone || '';
+    document.getElementById('bioInput').value = user.bio || '';
+    document.getElementById('passwordInput').value = '';
+    const avatar = document.getElementById('profileAvatarLetter');
+    avatar.textContent = (user.name || 'U').charAt(0).toUpperCase();
+    storeUser(user);
+}
+
+async function loadProfile() {
+    try {
+        const user = await apiCall('/api/users/me', 'GET', null, true);
+        renderProfile(user);
+    } catch (error) {
+        errorBox.textContent = error.message || 'Unable to load profile.';
+        errorBox.classList.add('show');
+    }
+}
+
+form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    errorBox.textContent = '';
+    errorBox.classList.remove('show');
+    successBox.textContent = '';
+    successBox.classList.remove('show');
+
+    const name = document.getElementById('profileNameInput').value.trim();
+    const password = document.getElementById('passwordInput').value;
+    if (!name) {
+        errorBox.textContent = 'Name is required.';
+        errorBox.classList.add('show');
+        return;
+    }
+    if (password && password.length < 8) {
+        errorBox.textContent = 'Password must be at least 8 characters.';
+        errorBox.classList.add('show');
+        return;
+    }
+
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving...';
+    try {
+        const payload = {
+            name,
+            company: document.getElementById('companyInput').value.trim(),
+            phone: document.getElementById('phoneInput').value.trim(),
+            bio: document.getElementById('bioInput').value.trim()
+        };
+        if (password) payload.password = password;
+
+        const updated = await apiCall(`/api/users/${profile.id}`, 'PUT', payload, true);
+        renderProfile(updated);
+        successBox.textContent = 'Profile updated successfully.';
+        successBox.classList.add('show');
+    } catch (error) {
+        errorBox.textContent = error.message || 'Unable to update profile.';
+        errorBox.classList.add('show');
+    } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = 'Save Changes';
+    }
+});
+
+loadProfile();
+</script>
+</body>
+</html>

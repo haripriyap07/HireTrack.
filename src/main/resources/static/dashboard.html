@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - HireTrack</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+<div id="navbarMount"></div>
+
+<section class="page-section">
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1>Welcome back, <span id="userName">User</span> 👋</h1>
+                <p class="subtitle">Track your applications and discover your next career opportunity.</p>
+            </div>
+        </div>
+
+        <div id="statsCards" class="stats-grid"></div>
+
+        <div class="content-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Recent Applications</h2>
+                </div>
+                <div id="recentApplications" class="panel-body">
+                    <p class="loading">Loading applications...</p>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Recommended Jobs</h2>
+                    <a href="/jobs.html" class="link-btn">Browse all jobs</a>
+                </div>
+                <div id="recommendedJobs" class="panel-body">
+                    <p class="loading">Loading jobs...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script src="/js/main.js"></script>
+<script>
+if (!requireAuth()) throw new Error('auth');
+if (normalizeRole(getStoredUser().role) !== 'CANDIDATE') {
+    window.location.href = getDashboardPath(getStoredUser().role);
+}
+
+initNavbar('dashboard');
+const user = getStoredUser();
+document.getElementById('userName').textContent = user.name || 'User';
+
+async function loadDashboard() {
+    try {
+        const [stats, applications, jobs] = await Promise.all([
+            apiCall('/api/applications/stats', 'GET', null, true),
+            apiCall('/api/applications/mine', 'GET', null, true),
+            apiCall('/api/jobs/all', 'GET', null, true)
+        ]);
+
+        renderStats(stats.counts || {});
+        renderRecentApplications(applications || []);
+        renderRecommendedJobs((jobs || []).filter(j => j.active !== false).slice(0, 4));
+    } catch (error) {
+        document.getElementById('recentApplications').innerHTML = `<div class="error-state">${error.message}</div>`;
+    }
+}
+
+function renderStats(counts) {
+    const cards = [
+        ['Total Applications', counts.TOTAL || 0],
+        ['Applied', counts.APPLIED || 0],
+        ['Under Review', counts.UNDER_REVIEW || 0],
+        ['Shortlisted', counts.SHORTLISTED || 0],
+        ['Interview', counts.INTERVIEW || 0],
+        ['Selected', counts.SELECTED || 0],
+        ['Rejected', counts.REJECTED || 0]
+    ];
+    document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `
+        <div class="stat-card">
+            <span class="stat-label">${label}</span>
+            <strong class="stat-value">${value}</strong>
+        </div>
+    `).join('');
+}
+
+function renderRecentApplications(applications) {
+    const container = document.getElementById('recentApplications');
+    if (!applications.length) {
+        container.innerHTML = `<div class="empty-state">No applications yet.<br>Browse jobs to apply for your first opportunity.</div>`;
+        return;
+    }
+    container.innerHTML = applications.slice(0, 5).map(app => `
+        <div class="list-row">
+            <div>
+                <h3>${app.jobTitle || 'Job #' + app.jobId}</h3>
+                <p>${app.jobCompany || ''} ${app.jobLocation ? '• ' + app.jobLocation : ''}</p>
+                <small>Applied ${formatDate(app.appliedDate)}</small>
+            </div>
+            <div class="row-actions">
+                <span class="${statusBadgeClass(app.status)}">${formatStatus(app.status)}</span>
+                <a href="/applications.html?id=${app.id}" class="btn btn-secondary btn-small">View Details</a>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderRecommendedJobs(jobs) {
+    const container = document.getElementById('recommendedJobs');
+    if (!jobs.length) {
+        container.innerHTML = `<div class="empty-state">No jobs available at the moment.</div>`;
+        return;
+    }
+    container.innerHTML = jobs.map(job => `
+        <div class="list-row">
+            <div>
+                <h3>${job.title}</h3>
+                <p>${job.company} • ${job.location}</p>
+                <small>${formatDate(job.postedDate)}</small>
+            </div>
+            <div class="row-actions">
+                ${job.applied ? `<span class="status-badge status-applied">Applied ✓</span>` : `<a href="/apply.html?jobId=${job.id}" class="btn btn-primary btn-small">Apply Now</a>`}
+            </div>
+        </div>
+    `).join('');
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

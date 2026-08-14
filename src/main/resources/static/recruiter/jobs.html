@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recruiter Jobs - HireTrack</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+<div id="navbarMount"></div>
+
+<section class="page-section">
+    <div class="container">
+        <div class="page-header page-header-split">
+            <div>
+                <p class="eyebrow">Recruiter Jobs</p>
+                <h1>Manage Job Postings</h1>
+                <p class="subtitle">Create, edit, and review applications for your listings.</p>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2 id="formHeading">Create Job</h2>
+            </div>
+            <div class="panel-body">
+                <form id="createJobForm">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input id="title" name="title" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Company</label>
+                        <input id="company" name="company" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Location</label>
+                        <input id="location" name="location" required />
+                    </div>
+                    <div class="form-group">
+                        <label>Type</label>
+                        <input id="jobType" name="jobType" />
+                    </div>
+                    <div class="form-group">
+                        <label>Skills (comma separated)</label>
+                        <input id="skills" name="skills" />
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="description" name="description"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Save Job</button>
+                        <span id="createJobMsg" class="form-note"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="jobsList" class="cards-grid" style="margin-top:16px"></div>
+    </div>
+</section>
+
+<script src="/js/main.js"></script>
+<script>
+if (!requireAuth()) throw new Error('auth');
+if (normalizeRole(getStoredUser().role) !== 'RECRUITER' && normalizeRole(getStoredUser().role) !== 'ADMIN') {
+    window.location.href = getDashboardPath(getStoredUser().role);
+}
+initNavbar('jobs');
+
+const createForm = document.getElementById('createJobForm');
+const formHeading = document.getElementById('formHeading');
+const createJobMsg = document.getElementById('createJobMsg');
+let editingJobId = null;
+
+createForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const jobData = {
+        title: document.getElementById('title').value.trim(),
+        company: document.getElementById('company').value.trim(),
+        location: document.getElementById('location').value.trim(),
+        jobType: document.getElementById('jobType').value.trim(),
+        skills: document.getElementById('skills').value.trim(),
+        description: document.getElementById('description').value.trim()
+    };
+    createJobMsg.textContent = editingJobId ? 'Saving...' : 'Creating...';
+    try {
+        if (editingJobId) {
+            await apiCall(`/api/jobs/${editingJobId}`, 'PUT', jobData, true);
+            createJobMsg.textContent = 'Job updated successfully.';
+        } else {
+            await apiCall('/api/jobs', 'POST', jobData, true);
+            createJobMsg.textContent = 'Job created successfully.';
+        }
+        createForm.reset();
+        editingJobId = null;
+        formHeading.textContent = 'Create Job';
+        await loadMyJobs();
+        setTimeout(() => createJobMsg.textContent = '', 3000);
+    } catch (err) {
+        createJobMsg.textContent = err.message || 'Failed to save job.';
+    }
+});
+
+function getQueryParam(key) {
+    return new URLSearchParams(window.location.search).get(key);
+}
+
+async function loadJobForEdit(jobId) {
+    try {
+        const job = await apiCall(`/api/jobs/${jobId}`, 'GET', null, true);
+        if (job) {
+            editingJobId = jobId;
+            formHeading.textContent = 'Edit Job';
+            document.getElementById('title').value = job.title || '';
+            document.getElementById('company').value = job.company || '';
+            document.getElementById('location').value = job.location || '';
+            document.getElementById('jobType').value = job.jobType || '';
+            document.getElementById('skills').value = job.skills || '';
+            document.getElementById('description').value = job.description || '';
+        }
+    } catch (err) {
+        createJobMsg.textContent = `Unable to load job: ${err.message}`;
+    }
+}
+
+async function toggleJobActive(jobId, currentActive) {
+    try {
+        const endpoint = currentActive ? `/api/jobs/${jobId}/close` : `/api/jobs/${jobId}/reopen`;
+        await apiCall(endpoint, 'PUT', null, true);
+        showToast(`Job ${currentActive ? 'closed' : 'reopened'} successfully.`, 'success');
+        await loadMyJobs();
+    } catch (err) {
+        showToast(err.message || 'Unable to update job.', 'danger');
+    }
+}
+
+async function loadMyJobs() {
+    try {
+        const jobs = await apiCall('/api/jobs/mine', 'GET', null, true);
+        const container = document.getElementById('jobsList');
+        if (!jobs || !jobs.length) {
+            container.innerHTML = '<div class="empty-state">No jobs yet.</div>';
+            return;
+        }
+        container.innerHTML = jobs.map(job => `
+            <article class="job-item">
+                <div class="job-item-header">
+                    <div>
+                        <h3>${job.title || 'Untitled Job'}</h3>
+                        <p class="job-meta">${job.company || 'Company'} • ${job.location || 'Location'}</p>
+                        <p class="job-meta">${job.jobType || 'Job type not specified'} • Posted ${formatDate(job.postedDate)}</p>
+                    </div>
+                    <span class="status-badge status-${job.active ? 'active' : 'closed'}">${job.active ? 'Active' : 'Closed'}</span>
+                </div>
+                <div class="job-description-preview">${job.description ? job.description.substring(0, 180) : '<em>No description provided.</em>'}</div>
+                <div class="job-actions">
+                    <a href="/recruiter/jobs.html?id=${job.id}" class="btn btn-secondary btn-small">Edit</a>
+                    <button type="button" class="btn btn-secondary btn-small" onclick="toggleJobActive(${job.id}, ${job.active})">${job.active ? 'Close' : 'Reopen'}</button>
+                    <a href="/recruiter/applications.html?jobId=${job.id}" class="btn btn-primary btn-small">Applications</a>
+                </div>
+            </article>
+        `).join('');
+    } catch (err) {
+        document.getElementById('jobsList').innerHTML = `<div class="error-state">${err.message}</div>`;
+    }
+}
+
+const editJobId = getQueryParam('id');
+if (editJobId) {
+    loadJobForEdit(editJobId);
+}
+loadMyJobs();
+</script>
+</body>
+</html>

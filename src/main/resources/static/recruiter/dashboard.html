@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recruiter Dashboard - HireTrack</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+<div id="navbarMount"></div>
+
+<section class="page-section">
+    <div class="container">
+        <div class="page-header page-header-split">
+            <div>
+                <p class="eyebrow">Recruiter Dashboard</p>
+                <h1>Welcome back, <span id="userName">Recruiter</span></h1>
+                <p class="subtitle">Review your jobs, applications, and performance in one place.</p>
+            </div>
+            <div class="header-actions">
+                <a href="/recruiter/jobs.html" class="btn btn-primary">Create Job</a>
+            </div>
+        </div>
+
+        <div id="statsCards" class="stats-grid"></div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2>My Jobs</h2>
+                <span id="jobsCount" class="subtitle"></span>
+            </div>
+            <div id="myJobs" class="panel-body">
+                <div class="loading">Loading jobs...</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2>Recent Applications</h2>
+            </div>
+            <div id="recentApplications" class="panel-body">
+                <div class="loading">Loading applications...</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script src="/js/main.js"></script>
+<script>
+if (!requireAuth()) throw new Error('auth');
+const stored = getStoredUser();
+if (normalizeRole(stored.role) !== 'RECRUITER' && normalizeRole(stored.role) !== 'ADMIN') {
+    window.location.href = getDashboardPath(stored.role);
+}
+
+initNavbar('dashboard');
+const user = getStoredUser();
+document.getElementById('userName').textContent = user.name || 'Recruiter';
+
+async function loadJobsWithCounts() {
+    const jobs = await apiCall('/api/jobs/mine', 'GET', null, true);
+    const jobsWithCounts = await Promise.all(jobs.map(async job => {
+        const apps = await apiCall(`/api/applications/job/${job.id}`, 'GET', null, true).catch(() => []);
+        return { ...job, applicationCount: Array.isArray(apps) ? apps.length : 0 };
+    }));
+    return jobsWithCounts;
+}
+
+function renderStats(counts) {
+    const cards = [
+        ['Total Jobs', counts.TOTAL_JOBS || 0],
+        ['Active Jobs', counts.ACTIVE_JOBS || 0],
+        ['Total Applications', counts.TOTAL_APPLICATIONS || 0],
+        ['Pending Reviews', counts.PENDING_REVIEWS || 0]
+    ];
+    document.getElementById('statsCards').innerHTML = cards.map(([label, value]) => `
+        <article class="stat-card">
+            <span class="stat-label">${label}</span>
+            <strong class="stat-value">${value}</strong>
+        </article>
+    `).join('');
+}
+
+function renderJobs(jobs) {
+    const container = document.getElementById('myJobs');
+    if (!jobs.length) {
+        container.innerHTML = `<div class="empty-state">You have no jobs yet. Create your first job to start receiving applications.</div>`;
+        document.getElementById('jobsCount').textContent = '';
+        return;
+    }
+    document.getElementById('jobsCount').textContent = `${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'}`;
+    container.innerHTML = jobs.map(job => `
+        <article class="job-item">
+            <div class="job-item-header">
+                <div>
+                    <h3>${job.title || 'Untitled Job'}</h3>
+                    <p class="job-meta">${job.company || 'Company'} • ${job.location || 'Location'}</p>
+                    <p class="job-meta">${job.jobType || 'Job Type not specified'} • Posted ${formatDate(job.postedDate)}</p>
+                </div>
+                <div class="job-buttons">
+                    <span class="status-badge status-${job.active ? 'active' : 'closed'}">${job.active ? 'Active' : 'Closed'}</span>
+                    <span class="badge">${job.applicationCount || 0} Applications</span>
+                </div>
+            </div>
+            <div class="job-description-preview">${job.description || '<em>No description provided.</em>'}</div>
+            <div class="job-actions">
+                <a href="/recruiter/jobs.html?id=${job.id}" class="btn btn-secondary btn-small">Edit</a>
+                <button type="button" class="btn btn-danger btn-small" onclick="confirmDeleteJob(${job.id})">Delete</button>
+                <a href="/recruiter/applications.html?jobId=${job.id}" class="btn btn-primary btn-small">View Applications</a>
+            </div>
+        </article>
+    `).join('');
+}
+
+async function renderRecentApplicationsFromJobs(jobs) {
+    const container = document.getElementById('recentApplications');
+    container.innerHTML = `<div class="loading">Loading applications...</div>`;
+    if (!jobs.length) {
+        container.innerHTML = `<div class="empty-state">No recent applications.</div>`;
+        return;
+    }
+    const appPromises = jobs.map(job => apiCall(`/api/applications/job/${job.id}`, 'GET', null, true).catch(() => []));
+    try {
+        const results = await Promise.all(appPromises);
+        const flattened = results.flat().sort((a, b) => new Date(b.appliedDate) - new Date(a.appliedDate)).slice(0, 6);
+        if (!flattened.length) {
+            container.innerHTML = `<div class="empty-state">No recent applications yet.</div>`;
+            return;
+        }
+        container.innerHTML = flattened.map(app => `
+            <div class="application-row">
+                <div>
+                    <h3>${app.applicantName || app.applicantEmail}</h3>
+                    <p>${app.jobTitle || 'Job #' + app.jobId} • ${app.jobCompany || ''}</p>
+                </div>
+                <div class="application-meta">
+                    <span>${formatDate(app.appliedDate)}</span>
+                    <span class="status-badge status-${(app.status || '').toLowerCase().replace(/_/g, '-')}">${formatStatus(app.status)}</span>
+                    <a href="/recruiter/applications.html?jobId=${app.jobId}" class="btn btn-secondary btn-small">View</a>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        container.innerHTML = `<div class="error-state">${error.message}</div>`;
+    }
+}
+
+async function confirmDeleteJob(jobId) {
+    if (!window.confirm('Delete this job? This action cannot be undone.')) return;
+    try {
+        await apiCall(`/api/jobs/${jobId}`, 'DELETE', null, true);
+        showToast('Job deleted successfully.', 'success');
+        await initDashboard();
+    } catch (error) {
+        showToast(error.message || 'Unable to delete job.', 'danger');
+    }
+}
+
+async function initDashboard() {
+    try {
+        const [stats, jobs] = await Promise.all([
+            apiCall('/api/jobs/stats/recruiter', 'GET', null, true),
+            loadJobsWithCounts()
+        ]);
+
+        renderStats(stats?.counts || {});
+        renderJobs(jobs || []);
+        await renderRecentApplicationsFromJobs(jobs || []);
+    } catch (error) {
+        document.getElementById('myJobs').innerHTML = `<div class="error-state">${error.message}</div>`;
+    }
+}
+
+initDashboard();
+</script>
+</body>
+</html>

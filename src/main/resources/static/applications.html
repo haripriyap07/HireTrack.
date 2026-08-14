@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Applications - HireTrack</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+<div id="navbarMount"></div>
+
+<section class="page-section">
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1>My Applications</h1>
+                <p class="subtitle">Track all your job applications in one place.</p>
+            </div>
+        </div>
+
+        <div id="statsSummary" class="stats-grid"></div>
+
+        <div class="toolbar">
+            <input id="appSearchInput" type="search" placeholder="Search by job title or company">
+            <select id="statusFilter">
+                <option value="">All Statuses</option>
+                <option value="APPLIED">Applied</option>
+                <option value="UNDER_REVIEW">Under Review</option>
+                <option value="SHORTLISTED">Shortlisted</option>
+                <option value="INTERVIEW">Interview</option>
+                <option value="SELECTED">Selected</option>
+                <option value="REJECTED">Rejected</option>
+            </select>
+        </div>
+
+        <div id="applicationsList" class="cards-grid">
+            <p class="loading">Loading applications...</p>
+        </div>
+    </div>
+</section>
+
+<script src="/js/main.js"></script>
+<script>
+    if (!requireAuth()) throw new Error('auth');
+    initNavbar('applications');
+
+    let allApps = [];
+
+    async function loadApplications() {
+        try {
+            showLoading('applicationsList', 'Loading applications...');
+            allApps = await apiCall('/api/applications/mine', 'GET', null, true);
+            renderApplications(allApps || []);
+            renderSummary(allApps || []);
+        } catch (err) {
+            document.getElementById('applicationsList').innerHTML = `<div class="error-state">Unable to load applications. ${err.message}</div>`;
+        }
+    }
+
+    function renderSummary(apps) {
+        const counts = apps.reduce((acc, a) => {
+            acc.ALL = (acc.ALL || 0) + 1;
+            acc[a.status] = (acc[a.status] || 0) + 1;
+            return acc;
+        }, {});
+        const labels = [ ['All', counts.ALL||0], ['Applied', counts.APPLIED||0], ['Under Review', counts.UNDER_REVIEW||0], ['Shortlisted', counts.SHORTLISTED||0], ['Interview', counts.INTERVIEW||0], ['Selected', counts.SELECTED||0], ['Rejected', counts.REJECTED||0] ];
+        document.getElementById('statsSummary').innerHTML = labels.map(([k,v])=>`<div class="stat-card"><span class="stat-label">${k}</span><strong class="stat-value">${v}</strong></div>`).join('');
+    }
+
+    function renderApplications(apps) {
+        const container = document.getElementById('applicationsList');
+        if (!apps.length) {
+            container.innerHTML = `<div class="empty-state">No applications yet.<br>Start exploring opportunities and apply for your first job.</div>`;
+            return;
+        }
+        container.innerHTML = apps.map(app => `
+            <article class="job-item">
+                <div class="job-item-header">
+                    <div>
+                        <h3>${app.jobTitle || 'Job #' + (app.jobId||'')}</h3>
+                        <p class="job-meta">${app.jobCompany || ''} • ${app.jobLocation || ''}</p>
+                        <small>Applied ${formatDate(app.appliedDate)}</small>
+                    </div>
+                    <div class="job-buttons">
+                        <span class="${statusBadgeClass(app.status)}">${formatStatus(app.status)}</span>
+                        <a href="/applications.html?id=${app.id}" class="btn btn-secondary btn-small">View Details</a>
+                    </div>
+                </div>
+            </article>
+        `).join('');
+    }
+
+    document.getElementById('appSearchInput').addEventListener('input', (e) => {
+        const term = e.target.value.trim().toLowerCase();
+        const filtered = allApps.filter(app => (app.jobTitle||'').toLowerCase().includes(term) || (app.jobCompany||'').toLowerCase().includes(term));
+        renderApplications(filtered);
+    });
+
+    document.getElementById('statusFilter').addEventListener('change', (e) => {
+        const val = e.target.value;
+        const filtered = val ? allApps.filter(a => a.status === val) : allApps;
+        renderApplications(filtered);
+    });
+
+    loadApplications();
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jobs - HireTrack</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+<div id="navbarMount"></div>
+
+<section class="page-section">
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1>Job Opportunities</h1>
+                <p class="subtitle">Discover roles that match your skills and career goals.</p>
+            </div>
+        </div>
+
+        <div class="toolbar">
+            <input id="jobSearchInput" type="search" placeholder="Search by title, company, or location">
+        </div>
+
+        <div id="jobsList" class="cards-grid">
+            <p class="loading">Loading jobs...</p>
+        </div>
+    </div>
+</section>
+
+<script src="/js/main.js"></script>
+<script>
+if (!requireAuth()) throw new Error('auth');
+initNavbar('jobs');
+
+let allJobs = [];
+
+async function loadJobs() {
+    try {
+        allJobs = await apiCall('/api/jobs/all', 'GET', null, true);
+        renderJobs(allJobs.filter(j => j.active !== false));
+    } catch (error) {
+        document.getElementById('jobsList').innerHTML = `<div class="error-state">Unable to load jobs. ${error.message}</div>`;
+    }
+}
+
+function renderJobs(jobs) {
+    const container = document.getElementById('jobsList');
+    if (!jobs.length) {
+        container.innerHTML = `<div class="empty-state">No jobs available at the moment.</div>`;
+        return;
+    }
+    container.innerHTML = jobs.map(job => `
+        <article class="job-card">
+            <div class="job-card-top">
+                <div>
+                    <h3>${job.title}</h3>
+                    <p class="job-meta">${job.company} • ${job.location}</p>
+                </div>
+                <span class="tag">${job.jobType || 'Full-time'}</span>
+            </div>
+            <p class="job-desc">${job.description || ''}</p>
+            ${job.skills ? `<p class="job-skills"><strong>Skills:</strong> ${job.skills}</p>` : ''}
+            <div class="job-card-footer">
+                <small>Posted ${formatDate(job.postedDate)}</small>
+                <div class="row-actions">
+                    <a href="/apply.html?jobId=${job.id}" class="btn btn-secondary btn-small">View Details</a>
+                    ${job.applied
+                        ? `<span class="status-badge status-applied">Applied ✓ ${job.applicationStatus ? '(' + formatStatus(job.applicationStatus) + ')' : ''}</span>`
+                        : `<a href="/apply.html?jobId=${job.id}" class="btn btn-primary btn-small">Apply Now</a>`}
+                </div>
+            </div>
+        </article>
+    `).join('');
+}
+
+document.getElementById('jobSearchInput').addEventListener('input', (e) => {
+    const term = e.target.value.trim().toLowerCase();
+    const filtered = allJobs.filter(j => j.active !== false).filter(job =>
+        (job.title || '').toLowerCase().includes(term) ||
+        (job.company || '').toLowerCase().includes(term) ||
+        (job.location || '').toLowerCase().includes(term)
+    );
+    renderJobs(filtered);
+});
+
+loadJobs();
+</script>
+</body>
+</html>

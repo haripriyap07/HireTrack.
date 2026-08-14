@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recruiter Applications - HireTrack</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="app-body">
+<div id="navbarMount"></div>
+
+<section class="page-section">
+    <div class="container">
+        <div class="page-header page-header-split">
+            <div>
+                <p class="eyebrow">Recruiter Applications</p>
+                <h1 id="pageHeading">Application Review</h1>
+                <p class="subtitle">Track candidate applications and update statuses for your active jobs.</p>
+            </div>
+            <div class="header-actions">
+                <a href="/recruiter/jobs.html" class="btn btn-primary">Manage Jobs</a>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2>Filters</h2>
+            </div>
+            <div class="panel-body">
+                <div class="toolbar">
+                    <label>
+                        Job
+                        <select id="jobSelect"></select>
+                    </label>
+                    <label>
+                        Status
+                        <select id="statusFilter">
+                            <option value="">All Statuses</option>
+                            <option value="APPLIED">Applied</option>
+                            <option value="UNDER_REVIEW">Under Review</option>
+                            <option value="SHORTLISTED">Shortlisted</option>
+                            <option value="INTERVIEW">Interview</option>
+                            <option value="SELECTED">Selected</option>
+                            <option value="REJECTED">Rejected</option>
+                        </select>
+                    </label>
+                    <label style="flex:1; min-width:240px;">
+                        Search
+                        <input id="appSearchInput" type="search" placeholder="Applicant name, email, or job title" />
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div id="applicationsSummary" class="stats-grid"></div>
+
+        <div id="applicationsList" class="panel panel-body">
+            <div class="loading">Loading applications...</div>
+        </div>
+    </div>
+</section>
+
+<script src="/js/main.js"></script>
+<script>
+if (!requireAuth()) throw new Error('auth');
+const user = getStoredUser();
+if (normalizeRole(user.role) !== 'RECRUITER' && normalizeRole(user.role) !== 'ADMIN') {
+    window.location.href = getDashboardPath(user.role);
+}
+
+initNavbar('applications');
+
+const jobSelect = document.getElementById('jobSelect');
+const statusFilter = document.getElementById('statusFilter');
+const appSearchInput = document.getElementById('appSearchInput');
+const applicationsList = document.getElementById('applicationsList');
+const applicationsSummary = document.getElementById('applicationsSummary');
+const pageHeading = document.getElementById('pageHeading');
+let jobs = [];
+let allApplications = [];
+let selectedJobId = getQueryParam('jobId');
+
+jobSelect.addEventListener('change', async () => {
+    selectedJobId = jobSelect.value;
+    updateUrlParam('jobId', selectedJobId);
+    await loadApplications(selectedJobId);
+});
+
+statusFilter.addEventListener('change', renderFilteredApplications);
+appSearchInput.addEventListener('input', renderFilteredApplications);
+
+function getQueryParam(key) {
+    return new URLSearchParams(window.location.search).get(key);
+}
+
+function updateUrlParam(key, value) {
+    const params = new URLSearchParams(window.location.search);
+    if (value) {
+        params.set(key, value);
+    } else {
+        params.delete(key);
+    }
+    const query = params.toString();
+    const newUrl = `${window.location.pathname}${query ? `?${query}` : ''}`;
+    window.history.replaceState({}, '', newUrl);
+}
+
+function createSummaryCards(apps) {
+    const counts = apps.reduce((acc, app) => {
+        acc.ALL = (acc.ALL || 0) + 1;
+        acc[app.status] = (acc[app.status] || 0) + 1;
+        return acc;
+    }, {});
+
+    const labels = [
+        ['All Applications', counts.ALL || 0],
+        ['Applied', counts.APPLIED || 0],
+        ['Under Review', counts.UNDER_REVIEW || 0],
+        ['Shortlisted', counts.SHORTLISTED || 0],
+        ['Interview', counts.INTERVIEW || 0],
+        ['Selected', counts.SELECTED || 0],
+        ['Rejected', counts.REJECTED || 0]
+    ];
+
+    applicationsSummary.innerHTML = labels.map(([label, value]) => `
+        <article class="stat-card">
+            <span class="stat-label">${label}</span>
+            <strong class="stat-value">${value}</strong>
+        </article>
+    `).join('');
+}
+
+async function loadRecruiterJobs() {
+    try {
+        jobs = await apiCall('/api/jobs/mine', 'GET', null, true);
+        if (!jobs || !jobs.length) {
+            applicationsList.innerHTML = '<div class="empty-state">No jobs found. Create a job posting first to review applications.</div>';
+            jobSelect.innerHTML = '<option value="">No jobs available</option>';
+            return;
+        }
+
+        jobSelect.innerHTML = jobs.map(job => `
+            <option value="${job.id}">${job.title || 'Untitled Job'}
+            ${job.company ? ' — ' + job.company : ''}
+            ${job.location ? ' (' + job.location + ')' : ''}
+            </option>
+        `).join('');
+
+        if (selectedJobId && jobs.some(job => String(job.id) === String(selectedJobId))) {
+            jobSelect.value = selectedJobId;
+        } else {
+            selectedJobId = String(jobs[0].id);
+            jobSelect.value = selectedJobId;
+            updateUrlParam('jobId', selectedJobId);
+        }
+
+        const selectedJob = jobs.find(job => String(job.id) === String(selectedJobId));
+        pageHeading.textContent = selectedJob ? `Applications for ${selectedJob.title}` : 'Application Review';
+        await loadApplications(selectedJobId);
+    } catch (error) {
+        applicationsList.innerHTML = `<div class="error-state">Unable to load jobs. ${error.message}</div>`;
+    }
+}
+
+async function loadApplications(jobId) {
+    if (!jobId) {
+        applicationsList.innerHTML = '<div class="empty-state">Select a job to view applications.</div>';
+        applicationsSummary.innerHTML = '';
+        return;
+    }
+
+    try {
+        showLoading(applicationsList, 'Loading applications...');
+        allApplications = await apiCall(`/api/applications/job/${jobId}`, 'GET', null, true);
+        renderFilteredApplications();
+        createSummaryCards(allApplications || []);
+    } catch (error) {
+        applicationsList.innerHTML = `<div class="error-state">Unable to load applications. ${error.message}</div>`;
+        applicationsSummary.innerHTML = '';
+    }
+}
+
+function renderFilteredApplications() {
+    const searchTerm = appSearchInput.value.trim().toLowerCase();
+    const status = statusFilter.value;
+    const filtered = (allApplications || []).filter(app => {
+        const matchesStatus = !status || app.status === status;
+        const matchesSearch = !searchTerm || [app.applicantName, app.applicantEmail, app.jobTitle, app.jobCompany]
+            .filter(Boolean)
+            .some(value => value.toLowerCase().includes(searchTerm));
+        return matchesStatus && matchesSearch;
+    });
+    renderApplications(filtered);
+}
+
+function renderApplications(apps) {
+    if (!apps.length) {
+        applicationsList.innerHTML = '<div class="empty-state">No applications match the selected filters.</div>';
+        return;
+    }
+
+    applicationsList.innerHTML = apps.map(app => `
+        <article class="job-item application-card">
+            <div class="job-item-header">
+                <div>
+                    <h3>${app.applicantName || app.applicantEmail || 'Applicant'}</h3>
+                    <p class="job-meta">${app.applicantEmail || ''} • Applied ${formatDate(app.appliedDate)}</p>
+                    <p class="job-meta">${app.jobTitle || 'Job'} • ${app.jobCompany || ''}</p>
+                </div>
+                <span class="${statusBadgeClass(app.status)}">${formatStatus(app.status)}</span>
+            </div>
+            <div class="application-content">
+                <p>${app.resumeUrl ? `<a href="${app.resumeUrl}" target="_blank">View resume</a>` : 'Resume not available'}</p>
+                <div class="match-card">
+                    <strong>Resume Match: ${app.matchScore != null ? app.matchScore + '%' : 'Not available'}</strong>
+                    ${app.matchedSkills ? `<p class="job-meta"><b>Matched:</b> ${app.matchedSkills}</p>` : ''}
+                    ${app.missingSkills ? `<p class="job-meta"><b>Missing:</b> ${app.missingSkills}</p>` : ''}
+                </div>
+                <button class="btn btn-secondary btn-small" type="button" onclick="toggleHistory(${app.id}, this)">View status history</button>
+                <div id="history-${app.id}" class="status-history" hidden></div>
+            </div>
+            <div class="job-actions application-actions">
+                <label>
+                    Update status
+                    <select class="status-select" onchange="updateApplicationStatus(${app.id}, this.value)">
+                        <option value="APPLIED" ${app.status === 'APPLIED' ? 'selected' : ''}>Applied</option>
+                        <option value="UNDER_REVIEW" ${app.status === 'UNDER_REVIEW' ? 'selected' : ''}>Under Review</option>
+                        <option value="SHORTLISTED" ${app.status === 'SHORTLISTED' ? 'selected' : ''}>Shortlisted</option>
+                        <option value="INTERVIEW" ${app.status === 'INTERVIEW' ? 'selected' : ''}>Interview</option>
+                        <option value="SELECTED" ${app.status === 'SELECTED' ? 'selected' : ''}>Selected</option>
+                        <option value="REJECTED" ${app.status === 'REJECTED' ? 'selected' : ''}>Rejected</option>
+                    </select>
+                </label>
+            </div>
+        </article>
+    `).join('');
+}
+
+async function toggleHistory(applicationId, button) {
+    const container = document.getElementById(`history-${applicationId}`);
+    if (!container) return;
+    if (!container.hidden) {
+        container.hidden = true;
+        button.textContent = 'View status history';
+        return;
+    }
+    button.disabled = true;
+    try {
+        const history = await apiCall(`/api/applications/${applicationId}/history`, 'GET', null, true);
+        container.innerHTML = history.length
+            ? history.map(item => `<div class="history-item"><strong>${formatStatus(item.status)}</strong><span>${formatDate(item.changedAt)}${item.changedBy ? ' • ' + item.changedBy : ''}</span></div>`).join('')
+            : '<div class="empty-state">No status history.</div>';
+        container.hidden = false;
+        button.textContent = 'Hide status history';
+    } catch (error) {
+        showToast(error.message || 'Unable to load status history.', 'error');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function updateApplicationStatus(applicationId, status) {
+    try {
+        await apiCall(`/api/applications/${applicationId}/status?status=${encodeURIComponent(status)}`, 'PUT', null, true);
+        showToast('Application status updated.', 'success');
+        await loadApplications(selectedJobId);
+    } catch (error) {
+        showToast(error.message || 'Unable to update status.', 'error');
+    }
+}
+
+loadRecruiterJobs();
+</script>
+</body>
+</html>

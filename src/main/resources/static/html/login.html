@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - HireTrack</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <div id="navbarMount"></div>
+
+    <!-- Login Section -->
+    <section class="auth-section">
+        <div class="auth-container">
+            <div class="auth-card">
+                <h2>Login to HireTrack</h2>
+                <p class="auth-subtitle">Access your account and find opportunities</p>
+                
+                <form id="loginForm" class="form">
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input 
+                            type="email" 
+                            id="email" 
+                            name="email" 
+                            placeholder="Enter your email" 
+                            required
+                        >
+                        <span class="error-message" id="emailError"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            placeholder="Enter your password" 
+                            required
+                        >
+                        <span class="error-message" id="passwordError"></span>
+                    </div>
+
+                    <div class="form-group remember-me">
+                        <input type="checkbox" id="remember" name="remember">
+                        <label for="remember">Remember me</label>
+                    </div>
+
+                    <div id="loginError" class="error-message error-block"></div>
+                    <div id="loginSuccess" class="success-message success-block" style="display:none;"></div>
+
+                    <button type="submit" class="btn btn-primary btn-block">Login</button>
+                </form>
+
+                <div class="auth-footer">
+                    <p>Don't have an account? <a href="register.html">Register here</a></p>
+                    <p><a href="#" class="forgot-password">Forgot your password?</a></p>
+                </div>
+            </div>
+
+            <div class="auth-info">
+                <h3>Welcome Back!</h3>
+                <p>Login to access exclusive job opportunities, manage your applications, and connect with top employers.</p>
+                <ul class="info-list">
+                    <li>✓ Browse job listings</li>
+                    <li>✓ Track applications</li>
+                    <li>✓ Manage profile</li>
+                    <li>✓ Network with recruiters</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 HireTrack. All rights reserved. | <a href="#">Privacy Policy</a> | <a href="#">Terms of Service</a></p>
+        </div>
+    </footer>
+
+    <script src="/js/main.js"></script>
+    <script src="/js/auth.js"></script>
+    <script>
+        // initialize navbar for auth pages
+        initNavbar('');
+    </script>
+</body>
+</html>

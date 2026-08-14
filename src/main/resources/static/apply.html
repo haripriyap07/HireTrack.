@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Apply for Job - HireTrack</title>
+
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+
+<body>
+
+<div id="navbarMount"></div>
+
+<section class="application-form-section">
+
+    <div class="container">
+
+        <div class="dashboard-block">
+
+            <div class="block-header">
+
+                <h2 id="displayJobTitle">
+                    Loading Job Details...
+                </h2>
+
+                <p id="displayJobMeta"></p>
+
+            </div>
+
+            <form
+                    id="applicationForm"
+                    class="form"
+                    enctype="multipart/form-data">
+
+                <div class="form-group">
+
+                    <label for="resumeFile">
+                        Resume
+                    </label>
+
+                    <input
+                            id="resumeFile"
+                            name="resume"
+                            type="file"
+                            accept=".pdf,.doc,.docx"
+                            required
+                    >
+
+                    <small>
+                        PDF, DOC or DOCX only.
+                        Maximum size: 5 MB.
+                    </small>
+
+                </div>
+
+                <div class="form-group">
+
+                    <div
+                            id="applicationStatus"
+                            class="form-note">
+                    </div>
+
+                    <div
+                            id="applicationError"
+                            class="error-message">
+                    </div>
+
+                </div>
+
+                <div class="form-actions">
+
+                    <button
+                            type="submit"
+                            class="btn btn-primary">
+
+                        Apply
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</section>
+
+<script src="/js/main.js"></script>
+
+<script>
+
+    if (!isLoggedIn()) {
+        window.location.href = '/html/login.html';
+    }
+
+    const urlParams =
+        new URLSearchParams(window.location.search);
+
+    const jobId =
+        urlParams.get('jobId');
+
+    const applicationForm =
+        document.getElementById('applicationForm');
+
+    const resumeFile =
+        document.getElementById('resumeFile');
+
+    const applicationStatus =
+        document.getElementById('applicationStatus');
+
+    const applicationError =
+        document.getElementById('applicationError');
+
+    const submitButton =
+        applicationForm.querySelector(
+            'button[type="submit"]'
+        );
+
+    if (!jobId) {
+
+        alert('Invalid Job Reference ID.');
+
+        window.location.href =
+            '/dashboard.html';
+    }
+
+    let jobData = null;
+
+    async function loadTargetJobData() {
+
+        try {
+
+            jobData =
+                await apiCall(
+                    `/api/jobs/${jobId}`,
+                    'GET',
+                    null,
+                    true
+                );
+
+            document.getElementById(
+                'displayJobTitle'
+            ).textContent =
+                jobData.title ||
+                'Job Specification';
+
+            document.getElementById(
+                'displayJobMeta'
+            ).textContent =
+                `${jobData.company || 'Company'} • ${
+                    jobData.location || 'Location'
+                }`;
+
+            if (jobData.applied) {
+
+                applicationStatus.textContent =
+                    'Applied ✓ Status: ' +
+                    (
+                        jobData.applicationStatus
+                            ? formatStatus(
+                                jobData.applicationStatus
+                            )
+                            : 'Applied'
+                    );
+
+                submitButton.textContent =
+                    'Applied ✓';
+
+                submitButton.disabled = true;
+
+                resumeFile.disabled = true;
+
+                resumeFile.required = false;
+
+                submitButton.classList.add(
+                    'btn-disabled'
+                );
+            }
+
+        } catch (error) {
+
+            document.getElementById(
+                'displayJobTitle'
+            ).textContent =
+                'Error Loading Job Specifications';
+
+            applicationError.textContent =
+                error.message ||
+                'Unable to load job.';
+        }
+    }
+
+    applicationForm.addEventListener(
+        'submit',
+        async (e) => {
+
+            e.preventDefault();
+
+            applicationError.textContent = '';
+            applicationStatus.textContent = '';
+
+            if (!jobData || jobData.applied) {
+                return;
+            }
+
+            const file =
+                resumeFile.files[0];
+
+            if (!file) {
+
+                applicationError.textContent =
+                    'Please select your resume.';
+
+                return;
+            }
+
+            const extension =
+                file.name
+                    .split('.')
+                    .pop()
+                    .toLowerCase();
+
+            if (
+                !['pdf', 'doc', 'docx']
+                    .includes(extension)
+            ) {
+
+                applicationError.textContent =
+                    'Only PDF, DOC, and DOCX files are allowed.';
+
+                return;
+            }
+
+            if (
+                file.size >
+                5 * 1024 * 1024
+            ) {
+
+                applicationError.textContent =
+                    'Resume must be 5 MB or smaller.';
+
+                return;
+            }
+
+            const formData =
+                new FormData();
+
+            formData.append(
+                'jobId',
+                String(jobId)
+            );
+
+            formData.append(
+                'resume',
+                file
+            );
+
+            submitButton.disabled = true;
+            resumeFile.disabled = true;
+
+            submitButton.textContent =
+                'Applying...';
+
+            try {
+
+                await apiCall(
+                    '/api/applications/apply',
+                    'POST',
+                    formData,
+                    true
+                );
+
+                applicationStatus.textContent =
+                    'Application submitted successfully!';
+
+                submitButton.textContent =
+                    'Applied ✓';
+
+                submitButton.classList.add(
+                    'btn-disabled'
+                );
+
+                setTimeout(() => {
+
+                    window.location.href =
+                        '/applications.html';
+
+                }, 1200);
+
+            } catch (error) {
+
+                applicationError.textContent =
+                    error?.message ||
+                    'Unable to submit application.';
+
+                submitButton.disabled = false;
+
+                resumeFile.disabled = false;
+
+                submitButton.textContent =
+                    'Apply';
+            }
+        }
+    );
+
+    document.addEventListener(
+        'DOMContentLoaded',
+        () => {
+
+            initNavbar('jobs');
+
+            loadTargetJobData();
+
+        }
+    );
+
+</script>
+
+</body>
+</html>
